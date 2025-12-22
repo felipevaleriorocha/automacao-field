@@ -71,6 +71,4 @@ O script espera uma estrutura de diretórios específica para funcionar corretam
 
 ⚠️ Notas Importantes
 
-    Segurança: Este script contém credenciais hardcoded (ex: $3nh@F0rt3$) para fins de configuração automática em ambiente controlado. Não utilize em produção sem alterar essas credenciais ou implementar um gerenciamento de segredos seguro.
-
     Compatibilidade: Testado em Windows 10 e Windows 11.
