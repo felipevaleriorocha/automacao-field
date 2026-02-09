@@ -1,28 +1,19 @@
-# ==============================================================================
-# SCRIPT MESTRE: CONFIGURAÇÃO DE SISTEMA + INSTALAÇÃO (COM REBOOT INTERMEDIARIO)
-# ==============================================================================
-
-# --- 1. DETECÇÃO DE DIRETÓRIOS E PREPARAÇÃO ---
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 if ([string]::IsNullOrWhiteSpace($ScriptDir)) { $ScriptDir = "D:\Script" }
-# Procura a pasta de repositório um nível acima ou na mesma pasta
 $ProgramsDir = Resolve-Path "$ScriptDir\..\Programas DTI" -ErrorAction SilentlyContinue
 if (!$ProgramsDir) { $ProgramsDir = "$ScriptDir\Programas DTI" } 
 
-# --- ARQUIVO DE ESTADO (Para persistencia pós-reboot) ---
 $TempDir = "C:\Setup_Temp" 
 if (!(Test-Path $TempDir)) { New-Item -Path $TempDir -ItemType Directory | Out-Null }
 $ArquivoEstado = "$TempDir\setup_state.json"
 $ScriptPathAtual = $MyInvocation.MyCommand.Definition
 
-# --- CONFIGURAÇÕES DE LOGS ---
 $LogDir = "C:\Logs_Setup"
 $ErrorLogDir = "$LogDir\Erros_Individuais"
 
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory | Out-Null }
 if (!(Test-Path $ErrorLogDir)) { New-Item -Path $ErrorLogDir -ItemType Directory | Out-Null }
 
-# --- CHECK DE INTERNET ---
 Write-Host "Verificando conexao..." -ForegroundColor DarkGray
 try {
     $ping = Test-Connection -ComputerName 8.8.8.8 -Count 1 -ErrorAction Stop
@@ -32,11 +23,6 @@ try {
     $global:TemInternet = $false
     Write-Host " [!] SEM INTERNET. Modo Offline Ativado." -ForegroundColor Yellow
 }
-
-# ==============================================================================
-# FUNÇÕES AUXILIARES
-# ==============================================================================
-
 function Registrar-Log {
     param ( [string]$Mensagem, [string]$Tipo="INFO", [string]$NomeArquivoErro="" )
     $Data = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -70,7 +56,6 @@ function Configurar-WsusBypass {
 function Executar-Instalacao {
     param ($Nome, $Tipo, $ID, $ArgsInstalacao, $CaminhoVerificacao, $ID_Backup, $Args_Backup)
 
-    # 1. Pular se for a opção "NENHUM" ou "ALL"
     if ($Nome -like "*>> NENHUM*" -or $Tipo -eq "ALL") { return }
 
     if ($CaminhoVerificacao -and (Test-Path $CaminhoVerificacao)) {
@@ -81,14 +66,12 @@ function Executar-Instalacao {
     Registrar-Log "-> Processando: $Nome..."
     $usarBackup = $false
 
-    # FIX LIGHTSHOT PREVENTIVO: Mata processos antes de começar
     if ($Nome -like "*Lightshot*") { Stop-Process -Name "Lightshot", "5.4.0.35" -Force -ErrorAction SilentlyContinue }
 
     try {
         $sucesso = $false
         $pathInstaladorLocal = $null
 
-        # A. WIN_FEATURE (.NET 3.5)
         if ($Tipo -eq "WIN_FEATURE") {
             Stop-Process -Name "dism","tiworker","wusa" -Force -ErrorAction SilentlyContinue
             if ($global:TemInternet) {
@@ -104,7 +87,6 @@ function Executar-Instalacao {
                     Copy-Item -Path $sourceFile -Destination $tempInstaller -Force -ErrorAction SilentlyContinue
                     Unblock-File -Path $tempInstaller -ErrorAction SilentlyContinue
                     
-                    # --- AUTOMAÇÃO DE TECLAS PARA .NET ---
                     Registrar-Log "Iniciando automacao de teclas para .NET..."
                     $wshell = New-Object -ComObject WScript.Shell
                     
@@ -128,7 +110,6 @@ function Executar-Instalacao {
             }
         }
 
-       # B. ENDPOINT ENCRYPTION (MODIFICADO: MANUAL + BLOCO DE NOTAS)
         elseif ($Nome -like "*Endpoint Encryption*") {
             $pathInstaladorLocal = if ($ID -match "\.\.") { Resolve-Path -Path $ID -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path } else { $ID }
             
@@ -136,16 +117,13 @@ function Executar-Instalacao {
                 
                 Registrar-Log "Preparando Endpoint Encryption..."
 
-                # Tenta localizar o arquivo TXT na mesma pasta do instalador
                 $pastaDoArquivo = Split-Path -Parent $pathInstaladorLocal
                 $caminhoTxt = "$pastaDoArquivo\Endpoint Encryption.txt"
 
-                # Se não achar na pasta relativa, tenta o caminho fixo solicitado
                 if (!(Test-Path $caminhoTxt)) {
                     $caminhoTxt = "D:\Programas DTI\12 - Endpoint Encryption\Endpoint Encryption.txt"
                 }
 
-                # 1. Abre o Bloco de Notas com as instruções/senhas
                 if (Test-Path $caminhoTxt) {
                     Registrar-Log "Abrindo arquivo de instrucoes..."
                     Start-Process "notepad.exe" -ArgumentList "`"$caminhoTxt`""
@@ -153,7 +131,6 @@ function Executar-Instalacao {
                     Registrar-Log "Arquivo 'Endpoint Encryption.txt' nao encontrado." "AVISO"
                 }
 
-                # 2. Abre o instalador e aguarda o usuário
                 Registrar-Log "Aguardando instalacao manual pelo usuario..."
                 Write-Host " [AGUARDANDO] O Bloco de Notas foi aberto." -ForegroundColor Yellow
                 Write-Host " [ACAO] Finalize a instalacao do Endpoint Encryption manualmente." -ForegroundColor Yellow
@@ -166,7 +143,6 @@ function Executar-Instalacao {
             } else { Registrar-Log "Instalador Endpoint nao encontrado: $ID" "ERRO" }
         }
 
-        # C. LOCAL INTERATIVO (GENÉRICO PARA OUTROS APPS)
         elseif ($Tipo -eq "LOCAL_INTERATIVO") {
             $pathInstaladorLocal = if ($ID -match "\.\.") { Resolve-Path -Path $ID -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path } else { $ID }
             if ($pathInstaladorLocal -and (Test-Path $pathInstaladorLocal)) {
@@ -177,7 +153,6 @@ function Executar-Instalacao {
             } else { Registrar-Log "ARQUIVO NAO ENCONTRADO: $ID" "ERRO" }
         }
 
-        # D. WINGET / DOWNLOAD
         elseif ($Tipo -eq "WINGET" -or $Tipo -eq "DOWNLOAD_MSI") {
             if ($global:TemInternet) {
                 if ($Tipo -eq "WINGET") {
@@ -196,17 +171,15 @@ function Executar-Instalacao {
             } else { Registrar-Log "Sem Internet. Tentando Backup..."; $usarBackup = $true }
         }
 
-        # E. LOCAL SILENCIOSO (COM FIX DO LIGHTSHOT)
         elseif ($Tipo -eq "LOCAL") {
             $pathInstaladorLocal = if ($ID -match "\.\.") { Resolve-Path -Path $ID -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path } else { $ID }
             if ($pathInstaladorLocal -and (Test-Path $pathInstaladorLocal)) {
                 $proc = $null
-                # LÓGICA ESPECIAL PARA LIGHTSHOT (Anti-Travamento)
                 if ($Nome -like "*Lightshot*") {
                     Registrar-Log "Iniciando Lightshot (Modo Timeout)..."
                     $proc = Start-Process $pathInstaladorLocal -ArgumentList $ArgsInstalacao -PassThru 
                     $contador = 0
-                    while (-not $proc.HasExited -and $contador -lt 15) { # Espera max 15 segundos
+                    while (-not $proc.HasExited -and $contador -lt 15) { 
                         Start-Sleep -Seconds 1
                         $contador++
                     }
@@ -216,7 +189,6 @@ function Executar-Instalacao {
                     }
                     $sucesso = $true 
                 } else {
-                    # Lógica Padrão para os outros
                     if ($pathInstaladorLocal -match "\.msi$") { $proc = Start-Process "msiexec.exe" -ArgumentList "/i `"$pathInstaladorLocal`" $ArgsInstalacao" -Wait -PassThru }
                     elseif ($pathInstaladorLocal -match "\.bat$") { $proc = Start-Process "cmd.exe" -ArgumentList "/c `"$pathInstaladorLocal`"" -Wait -PassThru }
                     else { $proc = Start-Process $pathInstaladorLocal -ArgumentList $ArgsInstalacao -Wait -PassThru }
@@ -228,7 +200,6 @@ function Executar-Instalacao {
             } else { Registrar-Log "ARQUIVO LOCAL NAO ENCONTRADO: $ID" "ERRO" }
         }
 
-        # F. BACKUP
         if ($usarBackup) {
             if ($ID_Backup) {
                 $pathBackup = if ($ID_Backup -match "\.\.") { Resolve-Path -Path $ID_Backup -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path } else { $ID_Backup }
@@ -256,7 +227,6 @@ function Executar-Instalacao {
             } else { Registrar-Log " [AVISO] Sem backup configurado para $Nome." "ERRO" }
         }
 
-        # G. PÓS-INSTALAÇÃO
         if ($sucesso) {
             if ($Nome -like "*TeamViewer*" -and $pathInstaladorLocal) {
                 $pastaTV = Split-Path -Parent $pathInstaladorLocal
@@ -269,7 +239,6 @@ function Executar-Instalacao {
             if ($Nome -like "*VPN CheckPoint*") {
                 Start-Sleep 10
                 $tracPath = "C:\Program Files (x86)\CheckPoint\Endpoint Security\Endpoint Connect\trac.exe"
-                # --- [CENSURADO] Endereço VPN removido ---
                 if (Test-Path $tracPath) { Start-Process $tracPath -ArgumentList "info -s vpn.suaempresa.com" -NoNewWindow -Wait }
             }
         }
@@ -279,35 +248,26 @@ function Executar-Instalacao {
     }
 }
 
-# ==============================================================================
-# LÓGICA PRINCIPAL: VERIFICA ESTADO PARA SABER SE É REBOOT OU INÍCIO
-# ==============================================================================
-
 if (Test-Path $ArquivoEstado) {
-    # >>> MODO 2: RETOMADA PÓS-REBOOT <<<
     Write-Host "`n==========================================================="
     Write-Host "   SISTEMA REINICIADO. RETOMANDO INSTALACAO AUTOMATICA..."
     Write-Host "===========================================================" -ForegroundColor Green
     Start-Sleep 3
 
     try {
-        # Lê o arquivo JSON
         $Estado = Get-Content $ArquivoEstado | ConvertFrom-Json
         $ListaBasica = $Estado.Basicos
         $ArquivoImagemOffice = $Estado.Office
         $ListaSeguranca = $Estado.Seguranca
         
-        # --- EXECUÇÃO DAS INSTALAÇÕES ---
         Registrar-Log "=== RETOMANDO INSTALACOES (HOSTNAME ATUAL: $env:COMPUTERNAME) ==="
 
-        # 1. Apps Básicos
         if ($ListaBasica) {
             foreach ($app in $ListaBasica) {
                 Executar-Instalacao -Nome $app.Nome -Tipo $app.Tipo -ID $app.ID -ArgsInstalacao $app.Args -CaminhoVerificacao $app.Verifica -ID_Backup $app.ID_Backup -Args_Backup $app.Args_Backup
             }
         }
 
-        # 2. Office
         if ($ArquivoImagemOffice) {
             $pathImg = "$ProgramsDir\Microsoft Office\$ArquivoImagemOffice"
             if (Test-Path $pathImg) {
@@ -348,7 +308,6 @@ if (Test-Path $ArquivoEstado) {
             }
         }
 
-        # 3. Segurança
         if ($ListaSeguranca) {
             Write-Host "`n=== SEGURANCA ===" -ForegroundColor Cyan
             foreach ($item in $ListaSeguranca) {
@@ -366,7 +325,6 @@ if (Test-Path $ArquivoEstado) {
         Registrar-Log "ERRO FATAL AO RETOMAR SCRIPT: $_" "ERRO"
     }
 
-    # --- LIMPEZA FINAL ---
     Write-Host "Limpando arquivos temporarios e AutoLogon..." -ForegroundColor Yellow
     Remove-Item $ArquivoEstado -ErrorAction SilentlyContinue
     
@@ -380,16 +338,13 @@ if (Test-Path $ArquivoEstado) {
     Exit
 
 } else {
-    # >>> MODO 1: PRIMEIRA EXECUÇÃO (CONFIGURAÇÃO E SELEÇÃO) <<<
-    
-    # --- 1. CONFIGURAÇÃO DE NOME ---
+
     Write-Host "=== CONFIGURACAO DE SISTEMA (FASE 1/2) ===" -ForegroundColor Cyan
     $resp = Read-Host "Renomear maquina? (S/N)"
 
     if ($resp -match "S|s") {
         $nomeDefinido = $false
         do {
-            # --- [CENSURADO] Exemplo genérico ---
             $novoNome = Read-Host "Digite o PATRIMONIO (EX: ABCDE123456)"
             if ($novoNome -match "^[A-Za-z]{6}[0-9]{6}$") {
                 try {
@@ -401,14 +356,11 @@ if (Test-Path $ArquivoEstado) {
         } until ($nomeDefinido)
     }
 
-    # --- 2. CONFIGURAÇÃO DE ADMIN ---
     Write-Host "`n-----------------------------------------------------------"
-    # --- [CENSURADO] Usuário admin genérico ---
     $respAdmin = Read-Host "Configurar usuario ADMIN (admin.local) e AutoLogon? (S/N)"
 
     if ($respAdmin -match "S|s") {
         Write-Host "Configurando Admin e Registro..." -ForegroundColor Cyan
-        # --- [CENSURADO] Senha substituída ---
         $senhaSecure = ConvertTo-SecureString 'SUA_SENHA_AQUI' -AsPlainText -Force
         try {
             $adminLocal = Get-LocalUser | Where-Object { $_.SID -like "*-500" }
@@ -419,15 +371,12 @@ if (Test-Path $ArquivoEstado) {
                 Set-LocalUser -Name "admin.local" -Password $senhaSecure -PasswordNeverExpires $true
                 Enable-LocalUser -Name "admin.local"
 
-                # AutoLogon (ESSENCIAL PARA O REBOOT FUNCIONAR)
                 $RegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
                 if (!(Test-Path $RegPath)) { New-Item -Path $RegPath -Force | Out-Null }
                 Set-ItemProperty $RegPath "AutoAdminLogon" "1"
                 Set-ItemProperty $RegPath "DefaultUserName" "admin.local"
-                # --- [CENSURADO] Senha substituída ---
                 Set-ItemProperty $RegPath "DefaultPassword" 'SUA_SENHA_AQUI'
                 
-                # Otimização OOBE
                 Set-ItemProperty $RegPath "EnableFirstLogonAnimation" "0"
                 $OOBEPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE"
                 if (!(Test-Path $OOBEPath)) { New-Item -Path $OOBEPath -Force | Out-Null }
@@ -436,14 +385,11 @@ if (Test-Path $ArquivoEstado) {
         } catch { Write-Host "Erro Config User: $_" -ForegroundColor Red }
     }
 
-    # --- 3. SELEÇÃO DE SOFTWARES (PARA SALVAR) ---
     Write-Host "`n==========================================================="
     Write-Host " SELECIONE OS PROGRAMAS PARA INSTALAR APOS O REINICIO"
     Write-Host "===========================================================" -ForegroundColor Cyan
     Start-Sleep 1
 
-    # Catálogos (Mantidos iguais)
-    # --- BASICOS ---
     $CatalogoBasico = @(
         [PSCustomObject]@{ Nome = ">> SELECIONAR TODOS (Dessa Lista)"; Tipo = "ALL"; ID = ""; Verifica = ""; ID_Backup = ""; Args_Backup = "" },
         [PSCustomObject]@{ Nome = ">> NENHUM (Pular Selecao)"; Tipo = "NENHUM"; ID = ""; Verifica = ""; ID_Backup = ""; Args_Backup = "" },
@@ -461,7 +407,6 @@ if (Test-Path $ArquivoEstado) {
     if ($ListaBasicaSel.Tipo -contains "ALL") { $ListaBasicaSel = $CatalogoBasico | Where-Object { $_.Tipo -ne "ALL" -and $_.Tipo -ne "NENHUM" } }
     elseif ($ListaBasicaSel.Tipo -contains "NENHUM") { $ListaBasicaSel = $null }
 
-    # --- OFFICE ---
     $CatalogoOffice = @(
         [PSCustomObject]@{ Nome = ">> NENHUM (Pular Office)"; Arquivo = $null }
         [PSCustomObject]@{ Nome = "Office 2016 (H&B)";        Arquivo = "HomeBusinessRetail_2016.img" }
@@ -473,7 +418,6 @@ if (Test-Path $ArquivoEstado) {
     $SelecaoOffice = $CatalogoOffice | Out-GridView -Title "2/3 - OFFICE (Apenas Um)" -OutputMode Single
     $ArquivoImagemOffice = if ($SelecaoOffice) { $SelecaoOffice.Arquivo } else { $null }
 
-    # --- SEGURANÇA ---
     $CatalogoSeguranca = @(
         [PSCustomObject]@{ Nome = ">> SELECIONAR TODOS (Dessa Lista)"; Tipo = "ALL"; ID = ""; ID_Backup = ""; Args_Backup = "" },
         [PSCustomObject]@{ Nome = ">> NENHUM (Pular Selecao)"; Tipo = "NENHUM"; ID = ""; ID_Backup = ""; Args_Backup = "" },
@@ -487,20 +431,15 @@ if (Test-Path $ArquivoEstado) {
     if ($ListaSegurancaSel.Tipo -contains "ALL") { $ListaSegurancaSel = $CatalogoSeguranca | Where-Object { $_.Tipo -ne "ALL" -and $_.Tipo -ne "NENHUM" } }
     elseif ($ListaSegurancaSel.Tipo -contains "NENHUM") { $ListaSegurancaSel = $null }
 
-    # --- 4. PREPARAR REBOOT ---
     Write-Host "`nSalvando configuracoes e preparando reinicializacao..." -ForegroundColor Yellow
     
-    # Salva o objeto de estado em JSON
     $EstadoParaSalvar = @{
         Basicos = $ListaBasicaSel
         Office = $ArquivoImagemOffice
         Seguranca = $ListaSegurancaSel
     }
     $EstadoParaSalvar | ConvertTo-Json -Depth 3 | Set-Content $ArquivoEstado
-
-    # Configura o RunOnce para rodar o script ao logar
-    # Usamos o caminho atual do script. Se estiver em pendrive, certifique-se que a letra nao mude.
-    # Por seguranca, vamos configurar o comando para executar este mesmo arquivo.
+    
     $ComandoRunOnce = "PowerShell.exe -WindowStyle Maximized -ExecutionPolicy Bypass -File `"$ScriptPathAtual`""
     Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" -Name "SetupDTI_Resume" -Value $ComandoRunOnce
 
@@ -509,4 +448,5 @@ if (Test-Path $ArquivoEstado) {
     
     Start-Sleep 5
     Restart-Computer -Force
+
 }
