@@ -1,7 +1,5 @@
 @echo off
-:: ============================================================
-:: INICIADOR DO SETUP DTI - EXECUCAO COMO ADMIN
-:: ============================================================
+
 TITLE Setup DTI - Inicializando...
 
 :: 1. Verifica Permissoes de Admin
@@ -39,3 +37,4 @@ if %errorlevel% NEQ 0 (
 )
 
 PAUSE
+
